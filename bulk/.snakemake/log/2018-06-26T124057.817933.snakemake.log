@@ -1,3 +1,0 @@
-SyntaxError:
-Not all output, log and benchmark files of rule star_map contain the same wildcards. This is crucial though, in order to avoid that two or more jobs write to the same file.
-  File "/dskh/nobackup/kitty/RNASeq/bulk/Snakefile", line 16, in <module>

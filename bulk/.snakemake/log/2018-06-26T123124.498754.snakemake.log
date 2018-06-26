@@ -1,3 +1,0 @@
-WorkflowError in line 3 of /dskh/nobackup/kitty/RNASeq/bulk/Snakefile:
-Config file config.yaml not found.
-  File "/dskh/nobackup/kitty/RNASeq/bulk/Snakefile", line 3, in <module>

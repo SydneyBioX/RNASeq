@@ -1,3 +1,0 @@
-KeyError in line 9 of /dskh/nobackup/kitty/RNASeq/bulk/Snakefile:
-'starRef'
-  File "/dskh/nobackup/kitty/RNASeq/bulk/Snakefile", line 9, in <module>
