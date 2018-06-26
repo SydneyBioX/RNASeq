@@ -1,0 +1,37 @@
+# Snakemake file for executing a standard RNAseq pipeline starting from fastq files 
+
+configfile: "config.yaml"
+
+rule all: 
+   input: 
+      expand("processed/bam/{sample}.sorted.bam", sample=config["samples"]) 
+
+rule star_map: 
+   input:
+      fastq1="fastq/{sample}_1.fastq.gz",
+      fastq2="fastq/{sample}_2.fastq.gz",
+      refDir=config["starRef"]
+   output: 
+      bam="processed/bam/{sample}Aligned.out.bam"
+   log: 
+      "logs/star_{sample}.log"
+   threads: config["threads"]
+   run: 
+      import re
+      basename = re.sub("Aligned.out.bam", "", output.bam)  
+      shell("STAR --readFilesIn {input.fastq1} {input.fastq2} --outSAMtype BAM Unsorted --readFilesCommand zcat --genomeDir {input.refDir} --runThreadN {threads} --outFileNamePrefix {basename} ") 
+   
+rule samtools_sort: 
+   input: 
+     "processed/bam/{sample}Aligned.out.bam"
+   output: 
+     bam="processed/bam/{sample}.sorted.bam",
+     bai="processed/bam/{sample}.sorted.bam.bai" 
+   threads: config["threads"]
+   log: 
+      "logs/samtools_sort_{sample}.log"
+   shell: 
+      "samtools sort -@ {threads} {input} > {output.bam}; " 
+      "samtools index {output.bam}; "  
+      "rm {input}" 
+ 

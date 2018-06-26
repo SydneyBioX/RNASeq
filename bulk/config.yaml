@@ -1,0 +1,11 @@
+# Configuration file for RNAseq pipeline 
+#
+
+# Comment out the species that you don't need here 
+#starRef: "/savona/nobackup/biostat/indexes/STAR/hg38withGENCODE26/" 
+starRef: "/savona/nobackup/biostat/indexes/STAR/mm10/" 
+
+threads: 8
+samples: 
+    SRR3031482: SRR3031482
+    SRR3031483: SRR3031483
