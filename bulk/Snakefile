@@ -4,7 +4,7 @@ configfile: "config.yaml"
 
 rule all: 
    input: 
-      expand("processed/bam/{sample}.sorted.bam", sample=config["samples"]) 
+      expand("processed/counts/{sample}_CountWithStats.txt", sample=config["samples"]) 
 
 rule star_map: 
    input:
