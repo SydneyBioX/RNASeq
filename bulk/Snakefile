@@ -34,4 +34,15 @@ rule samtools_sort:
       "samtools sort -@ {threads} {input} > {output.bam}; " 
       "samtools index {output.bam}; "  
       "rm {input}" 
- 
+
+rule htseq_counting: 
+   input: 
+      gtf=config["gtf"],
+      bam="processed/bam/{sample}.sorted.bam"
+   output: 
+      countfile="processed/counts/{sample}_CountWithStats.txt"
+   shell: 
+      "htseq-count --format bam --mode union --idattr gene_id {input.bam} {input.gtf} > {output.countfile}"  
+
+      
+      
