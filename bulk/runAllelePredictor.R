@@ -17,13 +17,13 @@ prepareAndIndexSequences(genesGFF3, hg38sequenceFile, STARmaskedFolder, bowtie2I
 ## No longer done separately. Use RNAanalysis.R.
 
 # R1s <- list.files("/savona/nobackup/biostat/datasets/HelenRizos/AGRF_CAGRF10479_C79UVANXX",
-                  ".*R1.*trimmed.*gz", full.names = TRUE) 
+#                  ".*R1.*trimmed.*gz", full.names = TRUE) 
 # R2s <- list.files("/savona/nobackup/biostat/datasets/HelenRizos/AGRF_CAGRF10479_C79UVANXX",
-                  ".*R2.*trimmed.*gz", full.names = TRUE)
+#                  ".*R2.*trimmed.*gz", full.names = TRUE)
 # sampleNames <- sapply(lapply(strsplit(basename(R1s), '_'), '[', 1:2), paste, collapse = '_')
 # predictQuantifyPolymorphicAlleles(R1s, R2s, sampleNames = sampleNames, maskedGenomePath = "/savona/nobackup/biostat/indexes/STAR/hg38maskedWithGENCODE26/",
-                          maskedGenomeName = "hg38masked", threads = 8, bowtie2polymorphicIndex = "polymorphic/polyUniq", predictionsFolder = "/savona/nobackup/dario/TestRun/"
-                          )
+#                          maskedGenomeName = "hg38masked", threads = 8, bowtie2polymorphicIndex = "polymorphic/polyUniq", predictionsFolder = "/savona/nobackup/dario/TestRun/"
+#                          )
 
 # RNAfolders <- c("/savona/nobackup/biostat/datasets/HelenRizos/AGRF_CAGRF10479_C79UVANXX",
 #                 "/savona/nobackup/biostat/datasets/HelenRizos/AGRF_CAGRF11240_C8768ANXX/",
