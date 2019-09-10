@@ -1,8 +1,10 @@
 processRNAreads <- function(baseFolder, sampleNameDelimiter = '_', sampleNameParts = 1, sampleNameReadOrder = 5,
                             adapterFirst = "AGATCGGAAGAGCACACGTCTGAACTCCAGTCAC", adapterSecond = "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTA",
-                            trimOptions = "-q 20,20 -m 50", organismGenome = "hg38", STARgenomePath = "/savona/nobackup/biostat/indexes/STAR/hg38withGENCODE29/",
-                            stranded = c("reverse", "forward", "none"), genesGFF3 = "/savona/nobackup/biostat/databases/GRCh38/gencode.v29.annotation.gff3",
-                            cores = 8, doCombine = TRUE, doTrim = TRUE, multipleDatasetsInStudy = TRUE,
+                            trimOptions = "-q 20,20 -m 50", organismGenome = "hg38", STARgenomePath = "/savona/nobackup/biostat/indexes/STAR/hg38maskedWithGENCODE31/",
+                            RSEMreference = "/savona/nobackup/biostat/databases/GRCh38/RSEMgencode31masked",
+                            bowtie2polymorphicIndex = "/savona/nobackup/biostat/indexes/bowtie2/polymorphic/polyUniqH337K280",
+                            stranded = c("reverse", "forward", "none"), genesGFF3 = "/savona/nobackup/biostat/databases/GRCh38/gencode.v31.annotation.gff3",
+                            cores = 8, doCombine = TRUE, doTrim = TRUE, multipleDatasetsInStudy = FALSE,
                             datasetID = strsplit(basename(baseFolder), '_')[[1]][2],
                             datasetsCountsDirectory = "/savona/nobackup/biostat/datasets/HeadNeckCancer/RNAseq")
 {
@@ -14,7 +16,7 @@ processRNAreads <- function(baseFolder, sampleNameDelimiter = '_', sampleNamePar
   library(edgeR)
   library(limma)
   library(RUVnormalize)
-  
+
   stranded <- match.arg(stranded)
 
   # Concatenate samples of patient sequenced in different lanes.
@@ -120,31 +122,31 @@ processRNAreads <- function(baseFolder, sampleNameDelimiter = '_', sampleNamePar
     }
     mapCommand <- paste(mapCommand, "--readFilesCommand gunzip -c --genomeDir", STARgenomePath, "--genomeLoad LoadAndKeep --outFilterMultimapNmax 999 --outFilterMismatchNoverReadLmax 0.1")
     if(is.numeric(sampleNameReadOrder))
-      mapCommand <- paste(mapCommand, "--chimSegmentMin 20 --alignMatesGapMax 1000000 --alignIntronMax 1000000 --alignEndsProtrude 10 ConcordantPair --peOverlapNbasesMin 10 --peOverlapMMp 0.1")
-    mapCommand <- paste(mapCommand, "--outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --chimOutType WithinBAM --limitBAMsortRAM 16000000000")
-    mapCommand <- paste(mapCommand, " --outReadsUnmapped Fastx --outFileNamePrefix ", '\'', paste(file.path(baseFolder, sampleName), organismGenome, sep = ''), '\'', sep = '')
+      mapCommand <- paste(mapCommand, "--chimSegmentMin 20 --alignMatesGapMax 1000000 --alignIntronMax 1000000 --alignEndsProtrude 10 ConcordantPair --chimSegmentReadGapMax 3 --peOverlapNbasesMin 10 --peOverlapMMp 0.1")
+    mapCommand <- paste(mapCommand, "--outSAMtype BAM SortedByCoordinate --quantMode TranscriptomeSAM --limitBAMsortRAM 16000000000 --chimOutJunctionFormat 1 --chimMultimapNmax 1")
+    mapCommand <- paste(mapCommand, " --outReadsUnmapped Fastx --outFileNamePrefix ", '\'', paste(file.path(baseFolder, "mapped/"), sampleName, organismGenome, sep = ''), '\'', sep = '')
     system(mapCommand)
   }, mappableReads, names(mappableReads)))
   
   # Create indexes for BAM files (i.e. Filenames with .bai suffix).
-  alignedSamples <- list.files(baseFolder, paste(organismGenome, "Aligned.*bam$", sep = ''), full.names = TRUE, recursive = TRUE)
-  sampleIDs <- gsub(paste(organismGenome, "Aligned.*", sep = ''), '', basename(alignedSamples))
-  names(alignedSamples) <- sampleIDs
+  alignedGenomeFiles <- list.files(baseFolder, paste(organismGenome, "Aligned.sortedByCoord.out.bam$", sep = ''), full.names = TRUE, recursive = TRUE)
+  sampleIDs <- gsub(paste(organismGenome, "Aligned.*", sep = ''), '', basename(alignedGenomeFiles))
+  names(alignedGenomeFiles) <- sampleIDs
   
-  invisible(mclapply(alignedSamples, function(alignedSample)
+  invisible(mclapply(alignedGenomeFiles, function(alignedSample)
   {
     system(paste("samtools index '", alignedSample, '\'', sep = ''))
   }, mc.cores = 4)) # Don't change to any more than 4, since lots of disk access is done.
   
   alignmentReports <- list.files(file.path(baseFolder, "mapped"), "Log.final.out", full.names = TRUE)
   reportsSample <- gsub(paste(organismGenome, "Log.final.out", sep = ''), '', basename(alignmentReports))
-  uniqueReadsGenome <- sapply(alignmentReports, function(reportFile)
+  readsAlignedGenome <- sapply(alignmentReports, function(reportFile)
   {
     alignSummary <- read.delim(reportFile, sep = '\t', stringsAsFactors = FALSE, header = FALSE)
-    as.numeric(alignSummary[8, 2]) + as.numeric(alignSummary[32, 2]) # Unique + chimeric
+    as.numeric(alignSummary[5, 2]) - (as.numeric(alignSummary[28, 2]) + as.numeric(alignSummary[30, 2]) + as.numeric(alignSummary[32, 2])) # Total - unmapped.
   })
-  names(uniqueReadsGenome) <- reportsSample
-  uniqueReadsGenome <- uniqueReadsGenome[match(names(readsOriginal), names(uniqueReadsGenome))]
+  names(readsAlignedGenome) <- reportsSample
+  readsAlignedGenome <- readsAlignedGenome[match(names(readsOriginal), names(readsAlignedGenome))]
   
   # Estimate gene counts using RSEM.
   
@@ -152,42 +154,95 @@ processRNAreads <- function(baseFolder, sampleNameDelimiter = '_', sampleNamePar
   sampleIDs <- gsub(paste(organismGenome, "Aligned.toTranscriptome.out.bam", sep = ''), '', basename(alignedTranscriptomeFiles))
   invisible(mapply(function(alignFile, sample)
   {
-    system(paste("rsem-calculate-expression --strandedness", stranded, "--alignments", if(length(mappableReads[[1]]) == 2) "--paired-end", "-p", cores, alignFile, "/savona/nobackup/biostat/databases/GRCh38/RSEMgencode29", file.path(baseFolder, "abundances", sample)))
+    system(paste("rsem-calculate-expression --strandedness", stranded, "--alignments", if(length(mappableReads[[1]]) == 2) "--paired-end", "-p", cores, alignFile, RSEMreference, file.path(baseFolder, "genomicAbundances", sample)))
   }, alignedTranscriptomeFiles, sampleIDs))
   
   # Import the estimated counts from RSEM and combine into a table.
-  sampleEstimatesFiles <- list.files(file.path(baseFolder, "abundances"), "genes.results", full.names = TRUE)
+  sampleEstimatesFiles <- list.files(file.path(baseFolder, "genomicAbundances"), "genes.results", full.names = TRUE)
   sampleIDs <- gsub(".genes.results", '', basename(sampleEstimatesFiles))
-  countsTable <- do.call(cbind, lapply(sampleEstimatesFiles, function(file) 
+  allGeneData <- lapply(sampleEstimatesFiles, function(estimatesFile) 
   {
-    sampleEstimates <- read.delim(file)
-    sampleEstimates[, "expected_count"]
-  }))
+    sampleEstimates <- read.delim(estimatesFile, stringsAsFactors = FALSE)
+    sampleEstimates[, c("gene_id", "effective_length", "expected_count")]
+  })
+  
+  countsTable <- do.call(cbind, lapply(allGeneData, '[[', "expected_count"))
   countsTable <- round(countsTable) # Make integers.
   colnames(countsTable) <- sampleIDs
   
   # Also explort FPKM table for tasks such as cell deconvolution or clustering.
   
-  FPKMsTable <- do.call(cbind, lapply(sampleEstimatesFiles, function(file) 
-  {
-    sampleEstimates <- read.delim(file)
-    sampleEstimates[, "FPKM"]
-  }))
-  colnames(FPKMsTable) <- sampleIDs
-  
-  geneInfo <- readGFF("/savona/nobackup/biostat/databases/GRCh38/gencode.v29.annotation.gtf")
+  geneInfo <- readGFF(genesGFF3)
   RSEMgeneIDs <- read.delim(sampleEstimatesFiles[1], stringsAsFactors = FALSE)[, "gene_id"]
   rowSymbols <- geneInfo[match(RSEMgeneIDs, geneInfo[, "gene_id"]), "gene_name"]
+  rownames(countsTable) <- rowSymbols
   duplicates <- names(table(rowSymbols)[table(rowSymbols) > 1])
+  
+  mergedDuplicatesTable <- do.call(rbind, lapply(duplicates, function(duplicateGene)
+  {
+    colSums(countsTable[which(rowSymbols == duplicateGene), , drop = FALSE])
+  }))
+  rownames(mergedDuplicatesTable) <- duplicates
   dropRows <- which(rowSymbols %in% duplicates)
   countsTable <- countsTable[-dropRows, , drop = FALSE]
-  FPKMsTable <- FPKMsTable[-dropRows, , drop = FALSE]
-  rowSymbols <- rowSymbols[-dropRows]
-  rownames(countsTable) <- rownames(FPKMsTable) <- rowSymbols
+  countsTable <- rbind(countsTable, mergedDuplicatesTable)
+  
+  # Estimate HLA and KIR genes and their alleles using IMGT HLA and KIR databases and incorporate their values into the gene expression table.
+  
+  unalignedGenomeFilesR1 <- list.files(file.path(baseFolder, "mapped"), paste(organismGenome, "Unmapped.out.mate1", sep = ''), full.names = TRUE)
+  unalignedGenomeFilesR2 <- list.files(file.path(baseFolder, "mapped"), paste(organismGenome, "Unmapped.out.mate2", sep = ''), full.names = TRUE)
+  sampleNames <- gsub(paste(organismGenome, ".*", sep = ''), '', basename(unalignedGenomeFilesR1))
+  mapAndEstimatePolymorphic(unalignedGenomeFilesR1, unalignedGenomeFilesR2, sampleNames = sampleNames,
+                                    bowtie2polymorphicIndex = bowtie2polymorphicIndex)
+  
+  # Incorporate the estimated polymorphic gene counts into the all-gene count table and correctly calculate FPKMs.
+  
+  polyGenesQuantFiles <- list.files(file.path(baseFolder, "polymorphicAbundances"), "genes.results", full.names = TRUE)
+  polyGenesQuantFiles <- polyGenesQuantFiles[match(names(readsOriginal), gsub(".genes.results", '', basename(polyGenesQuantFiles)))]
+
+  polyGeneData <- lapply(polyGenesQuantFiles, function(estimatesFile) 
+  {
+    sampleEstimates <- read.delim(estimatesFile, stringsAsFactors = FALSE)
+    sampleEstimates[, c("gene_id", "effective_length", "expected_count")]
+  })
+  
+  # IMGT database and GENCODE use different names for some genes. These are the GENCODE versions.
+  
+  polyGeneIDs <- c("HLA-DMA", "HLA-DMB", "HLA-DOA", "HLA-DOB", "HLA-DPA1", "HLA-DPA2", "HLA-DPB1", "HLA-DPB2", "HLA-DQA1", "HLA-DQB1",
+                   "HLA-DRA", "HLA-DRB1", "HLA-DRB2", "HLA-DRB3", "HLA-DRB4", "HLA-DRB5", "HLA-DRB6", "HLA-DRB7", "HLA-DRB8", "HLA-DRB9",
+                   "HFE", "HLA-A", "HLA-B", "HLA-C", "HLA-E", "HLA-F", "HLA-G", "HLA-H", "HLA-J", "HLA-K", "HLA-L", "HLA-N", "HLA-S", "HLA-T",
+                   "HLA-U", "HLA-V", "HLA-W", "HLA-Y", "KIR2DL1", "KIR2DL2", "KIR2DL3", "KIR2DL4", "KIR2DL5A", "KIR2DL5B", "KIR2DP1",
+                   "KIR2DS1", "KIR2DS2", "KIR2DS3", "KIR2DS4", "KIR2DS5", "KIR3DL1", "KIR3DL2", "KIR3DL3", "KIR3DP1", "KIR3DS1",
+                   "MICA", "MICB", "TAP1", "TAP2")
+  IMGTpolyIDs <- polyGeneData[[1]][, "gene_id"]
+  
+  polyGeneCounts <- round(do.call(cbind, lapply(polyGeneData, "[[", "expected_count")))
+  polyInAllRows <- match(polyGeneIDs, rownames(countsTable))
+  polyGeneCounts <- polyGeneCounts[!is.na(polyInAllRows), , drop = FALSE]
+  polyNotInGenesDB <- !is.na(polyInAllRows)
+  polyGeneIDs <- polyGeneIDs[polyNotInGenesDB] 
+  IMGTpolyIDs <- IMGTpolyIDs[polyNotInGenesDB]
+  
+  countsTable[match(polyGeneIDs, rownames(countsTable)), ] <- polyGeneCounts
   
   countsFile <- "unnormalisedGeneCounts.txt"
   countsPath <- file.path(baseFolder, countsFile)
   write.table(countsTable, countsPath, sep = '\t', quote = FALSE)
+  
+  # Calculate FPKM based on effective gene length, read count per gene and total read count.
+  
+  allRows <- match(rownames(countsTable), geneInfo[match(allGeneData[[1]][, "gene_id"], geneInfo[, "gene_id"]), "gene_name"])
+  polyRows <- match(IMGTpolyIDs, polyGeneData[[1]][, "gene_id"])
+  polyRowsInAll <- match(polyGeneIDs, rownames(countsTable))
+  mapply(function(sampleCounts, allData, polyData)
+  {
+    allLengths <- allData[allRows, "effective_length"]
+    polyLengths <- polyData[polyRows, "effective_length"]
+    FPKMs <- sampleCounts / (allLengths / 1000) / (sum(sampleCounts) / 1000000)
+    FPKMs[is.nan(FPKMs)] <- 0 # If count and length are 0, this causes NaN.
+    FPKMs[polyRowsInAll] <- sampleCounts[polyRowsInAll] / (polyLengths / 1000) / (sum(sampleCounts) / 1000000)
+  }, as.data.frame(countsTable), allGeneData, polyGeneData)
+  
   FPKMfile <- "geneFPKMs.txt"
   FPKMpath <- file.path(baseFolder, FPKMfile)
   write.table(FPKMsTable, FPKMpath, sep = '\t', quote = FALSE)
@@ -198,6 +253,10 @@ processRNAreads <- function(baseFolder, sampleNameDelimiter = '_', sampleNamePar
     allCountsPath <- file.path(datasetsCountsDirectory, datasetCountsFile)
     write.table(countsTable, allCountsPath, sep = '\t', quote = FALSE)
   }
+  
+  # Estimate which alleles are expressed.
+  
+  predictQuantifyPolymorphicAlleles(file.path(baseFolder, "mapped"), file.path(baseFolder, "polymorphicAbundances"), colSums(countsTable))
   
   # TMM normalise the counts, then normalise with voom, which is essentially just log2-CPM.
   DGEListObject <- DGEList(countsTable)
@@ -254,11 +313,11 @@ processRNAreads <- function(baseFolder, sampleNameDelimiter = '_', sampleNamePar
     readsSummary <- data.frame(Sample = names(readsToMap),
                                `Sequenced Reads` = readsOriginal,
                                `Trimmed and Quality Filtered Reads` = readsToMap,
-                               `Mapped to Genome` = uniqueReadsGenome, check.names = FALSE)
+                               `Mapped to Genome` = readsAlignedGenome, check.names = FALSE)
   } else {
     readsSummary <- data.frame(Sample = names(readsToMap),
                                `Trimmed and Quality Filtered Reads` = readsToMap,
-                               `Mapped to Genome` = uniqueReadsGenome, check.names = FALSE)    
+                               `Mapped to Genome` = readsAlignedGenome, check.names = FALSE)    
   }
   write.table(readsSummary, file.path(baseFolder, "samplesTotalReads.txt"), row.names = FALSE, sep = '\t', quote = FALSE)
 }
@@ -268,3 +327,6 @@ processRNAreads <- function(baseFolder, sampleNameDelimiter = '_', sampleNamePar
 
 # RSEM index
 # rsem-prepare-reference --gtf /savona/nobackup/biostat/databases/GRCh38/gencode.v29.annotation.gtf /savona/nobackup/biostat/sequence/hg38/GCA_000001405.15_GRCh38_no_alt_analysis_set.fna /savona/nobackup/biostat/databases/GRCh38/RSEMgencode29
+# rsem-prepare-reference --gtf /savona/nobackup/biostat/databases/GRCh38/gencode.v31.annotation.gtf /savona/nobackup/biostat/sequence/hg38/GCA_000001405.15_GRCh38_no_alt_analysis_set.masked.fna /savona/nobackup/biostat/databases/GRCh38/RSEMgencode31masked
+
+# processRNAreads("/savona/nobackup/biostat/datasets/HeadNeckCancer/RNAseq")
