@@ -1,4 +1,4 @@
-mapAndEstimatePolymorphic <- function(R1unmappedReadsPaths, R2unmappedReadsPaths = NULL, strandedness = c("reverse", "forward", "none"),
+  mapAndEstimatePolymorphic <- function(R1unmappedReadsPaths, R2unmappedReadsPaths = NULL, strandedness = c("reverse", "forward", "none"),
                                       sampleNames, threads = 8, mappingsFolder = dirname(R1unmappedReadsPaths)[1],
                                       bowtie2polymorphicIndex, predictionsFolder = file.path(dirname(mappingsFolder), "polymorphicAbundances"),
                                       verbose = TRUE)
@@ -11,7 +11,7 @@ mapAndEstimatePolymorphic <- function(R1unmappedReadsPaths, R2unmappedReadsPaths
   strandMode <- switch(strandedness, none = 0, forward = 1, reverse = 2)
   
   # Mapping to masked genome.
-  invisible(lapply(1:(length(R1readsPaths)), function(sampleNumber)
+  invisible(lapply(1:(length(R1unmappedReadsPaths)), function(sampleNumber)
   {
     currentSample <- sampleNames[sampleNumber]
     bowtie2Command <- paste("bowtie2 -p", threads, "--local --no-mixed --no-unal -a --ma 0 --mp 1,1 --rdg 0,1 --rfg 0,1 --score-min C,0 -x", bowtie2polymorphicIndex)
@@ -47,7 +47,7 @@ mapAndEstimatePolymorphic <- function(R1unmappedReadsPaths, R2unmappedReadsPaths
     
     if(verbose == TRUE)
       message("Sorting and indexing reads mapped to alleles.")
-    polymorphicAlignments <- list.files(predictionsFolder, paste(currentSample, "toPolymorphic.bam$", sep = ".*"), full.names = TRUE)
+    polymorphicAlignments <- list.files(predictionsFolder, paste(currentSample, "transcript.bam$", sep = ".*"), full.names = TRUE)
     system(paste("samtools sort -@ ", threads, " \'", polymorphicAlignments, '\'', " -o \'", gsub("bam", "sorted.bam", polymorphicAlignments), '\'', sep = ''))
     system(paste("mv '", gsub("bam", "sorted.bam", polymorphicAlignments), '\'', " \'", polymorphicAlignments, "\' ", sep = ''))
     system(paste("samtools index '", polymorphicAlignments, '\'', sep = ''))

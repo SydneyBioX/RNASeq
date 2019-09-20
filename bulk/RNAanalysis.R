@@ -176,6 +176,9 @@ processRNAreads <- function(baseFolder, sampleNameDelimiter = '_', sampleNamePar
   RSEMgeneIDs <- read.delim(sampleEstimatesFiles[1], stringsAsFactors = FALSE)[, "gene_id"]
   rowSymbols <- geneInfo[match(RSEMgeneIDs, geneInfo[, "gene_id"]), "gene_name"]
   rownames(countsTable) <- rowSymbols
+  countsTable <- countsTable[!is.na(rowSymbols), ] # Some weird GENCODE IDs don't get imported faithfully.
+  rowSymbols <- rowSymbols[!is.na(rowSymbols)]
+  
   duplicates <- names(table(rowSymbols)[table(rowSymbols) > 1])
   
   mergedDuplicatesTable <- do.call(rbind, lapply(duplicates, function(duplicateGene)
@@ -234,17 +237,20 @@ processRNAreads <- function(baseFolder, sampleNameDelimiter = '_', sampleNamePar
   allRows <- match(rownames(countsTable), geneInfo[match(allGeneData[[1]][, "gene_id"], geneInfo[, "gene_id"]), "gene_name"])
   polyRows <- match(IMGTpolyIDs, polyGeneData[[1]][, "gene_id"])
   polyRowsInAll <- match(polyGeneIDs, rownames(countsTable))
-  mapply(function(sampleCounts, allData, polyData)
+  FPKMsTable <- mapply(function(sampleCounts, allData, polyData)
   {
     allLengths <- allData[allRows, "effective_length"]
     polyLengths <- polyData[polyRows, "effective_length"]
     FPKMs <- sampleCounts / (allLengths / 1000) / (sum(sampleCounts) / 1000000)
     FPKMs[is.nan(FPKMs)] <- 0 # If count and length are 0, this causes NaN.
     FPKMs[polyRowsInAll] <- sampleCounts[polyRowsInAll] / (polyLengths / 1000) / (sum(sampleCounts) / 1000000)
+    FPKMs
   }, as.data.frame(countsTable), allGeneData, polyGeneData)
   
   FPKMfile <- "geneFPKMs.txt"
   FPKMpath <- file.path(baseFolder, FPKMfile)
+  rownames(FPKMsTable) <- rownames(countsTable)
+  FPKMsTable <- round(FPKMsTable, 2)
   write.table(FPKMsTable, FPKMpath, sep = '\t', quote = FALSE)
   
   if(multipleDatasetsInStudy == TRUE)

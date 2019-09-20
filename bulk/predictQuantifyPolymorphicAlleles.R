@@ -1,4 +1,4 @@
-predictQuantifyPolymorphicAlleles <- function(mappingsFolder, predictionsFolder, samplesTotalReads, minCoverage = 2, maxFlankingBasesUncovered = 100, verbose = TRUE)
+predictQuantifyPolymorphicAlleles <- function(mappingsFolder, predictionsFolder, samplesTotalReads, minCoverage = 2, threads = 8, maxFlankingBasesUncovered = 100, verbose = TRUE)
 {
   require(GenomicAlignments)
   require(BiocParallel)
@@ -6,12 +6,12 @@ predictQuantifyPolymorphicAlleles <- function(mappingsFolder, predictionsFolder,
   allelesQuantFiles <- list.files(predictionsFolder, "isoforms.results", full.names = TRUE)
   sampleIDs <- basename(gsub(".isoforms.results", '', allelesQuantFiles))
   alleleTables <- lapply(allelesQuantFiles, function(file) read.delim(file, stringsAsFactors = FALSE)[, c("transcript_id", "gene_id", "expected_count", "IsoPct")])
-  
+
   datasetAllelesTable <- do.call(cbind, mcmapply(function(alleleTable, sampleName, sampleTotalReads)
   {
     if(verbose == TRUE)
       message("Estimating alleles and their expression for ", sampleName)
-    polymorphicAlignments <- list.files(mappingsFolder, paste(sampleName, "toPolymorphic.bam$", sep = ".*"), full.names = TRUE)
+    polymorphicAlignments <- list.files(predictionsFolder, paste(sampleName, "transcript.bam$", sep = '.'), full.names = TRUE)
     polymorphicGenomicSequenceMapping  <- readGAlignmentPairs(polymorphicAlignments, param = ScanBamParam(mapqFilter = 1), strandMode = 0, use.names = TRUE)
     readsToPolymorphic <- length(unique(names(polymorphicGenomicSequenceMapping)))
     allelesCoverage <- coverage(polymorphicGenomicSequenceMapping)
@@ -61,8 +61,6 @@ predictQuantifyPolymorphicAlleles <- function(mappingsFolder, predictionsFolder,
   }, alleleTables, sampleIDs, samplesTotalReads, mc.cores = threads, SIMPLIFY = FALSE))
   rownames(datasetAllelesTable) <- unique(alleleTables[[1]][, "gene_id"])
   write.table(datasetAllelesTable, file.path(predictionsFolder, file = "polymorphicAllelesValues.txt"), sep = '\t', quote = FALSE)
-  
-  system(paste("rm -r", file.path(mappingsFolder, paste('*', maskedGenomeName, '*', sep = ''))))
   
   if(verbose == TRUE)
     message("Allele predictions saved to disk.")
